@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVG Code Painter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Use Inter font */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Ensure SVG takes pointer events */
+        #drawingCanvas {
+            touch-action: none; /* Prevent default touch actions like scrolling */
+            cursor: crosshair;
+            border: 1px solid #ccc; /* Add a border for visibility */
+            border-radius: 0.375rem; /* rounded-md */
+            background-color: #f9fafb; /* bg-gray-50 */
+        }
+        /* Style the code display area */
+        #svgCode {
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background-color: #1f2937; /* bg-gray-800 */
+            color: #f3f4f6; /* text-gray-100 */
+            border-radius: 0.375rem; /* rounded-md */
+            padding: 1rem; /* p-4 */
+            height: 100%;
+            overflow: auto;
+        }
+        /* Custom scrollbar for code area (optional but nice) */
+        #svgCode::-webkit-scrollbar {
+            width: 8px;
+        }
+        #svgCode::-webkit-scrollbar-track {
+            background: #374151; /* bg-gray-700 */
+            border-radius: 0.375rem;
+        }
+        #svgCode::-webkit-scrollbar-thumb {
+            background-color: #6b7280; /* bg-gray-500 */
+            border-radius: 0.375rem;
+            border: 2px solid #374151; /* bg-gray-700 */
+        }
+        /* Basic styling for controls */
+        label {
+            margin-right: 0.5rem; /* mr-2 */
+        }
+        input[type="color"], input[type="range"] {
+            margin-right: 1rem; /* mr-4 */
+            vertical-align: middle;
+        }
+        button {
+            padding: 0.5rem 1rem; /* py-2 px-4 */
+            border-radius: 0.375rem; /* rounded-md */
+            background-color: #3b82f6; /* bg-blue-500 */
+            color: white;
+            font-weight: 500; /* font-medium */
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #2563eb; /* hover:bg-blue-600 */
+        }
+    </style>
+     <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-100 p-4 md:p-8 h-screen flex flex-col">
+
+    <h1 class="text-2xl font-bold mb-4 text-center text-gray-800">SVG Code Painter</h1>
+
+    <div class="mb-4 p-4 bg-white rounded-lg shadow flex items-center justify-center space-x-4 flex-wrap">
+        <div>
+            <label for="strokeColor" class="text-gray-700 font-medium">Color:</label>
+            <input type="color" id="strokeColor" value="#000000" class="w-8 h-8 rounded border border-gray-300 cursor-pointer">
+        </div>
+        <div>
+            <label for="strokeWidth" class="text-gray-700 font-medium">Width:</label>
+            <input type="range" id="strokeWidth" min="1" max="50" value="5" class="cursor-pointer align-middle">
+            <span id="strokeWidthValue" class="text-gray-600 align-middle">5</span>
+        </div>
+        <button id="clearButton">Clear Canvas</button>
+        <button id="undoButton">Undo Last</button>
+    </div>
+
+    <div class="flex-grow flex flex-col md:flex-row gap-4 overflow-hidden">
+        <div class="w-full md:w-2/3 h-64 md:h-full bg-white rounded-lg shadow overflow-hidden">
+             <svg id="drawingCanvas" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                </svg>
+        </div>
+
+        <div class="w-full md:w-1/3 h-64 md:h-full bg-gray-800 rounded-lg shadow overflow-hidden">
+            <pre id="svgCode" class="h-full"></pre>
+        </div>
+    </div>
+
+    <script>
+        // Get DOM elements
+        const canvas = document.getElementById('drawingCanvas');
+        const svgCode = document.getElementById('svgCode');
+        const strokeColorInput = document.getElementById('strokeColor');
+        const strokeWidthInput = document.getElementById('strokeWidth');
+        const strokeWidthValue = document.getElementById('strokeWidthValue');
+        const clearButton = document.getElementById('clearButton');
+        const undoButton = document.getElementById('undoButton');
+
+        // State variables
+        let isDrawing = false;
+        let currentPath; // The current <path> element being drawn
+        let currentPathData = ''; // The 'd' attribute data for the current path
+        let strokeColor = strokeColorInput.value;
+        let strokeWidth = strokeWidthInput.value;
+
+        // --- Utility Functions ---
+
+        // Function to get mouse/touch coordinates relative to the SVG canvas
+        function getCoordinates(event) {
+            const rect = canvas.getBoundingClientRect();
+            // Handle both mouse and touch events
+            const clientX = event.clientX ?? event.touches[0].clientX;
+            const clientY = event.clientY ?? event.touches[0].clientY;
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        // Function to update the displayed SVG code
+        function updateCodeDisplay() {
+            // Add XML declaration and SVG opening tag for context
+            const svgContent = canvas.innerHTML.trim();
+            const fullSvgCode = `<?xml version="1.0" encoding="UTF-8" ?>\n<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">\n  ${svgContent}\n</svg>`;
+            svgCode.textContent = fullSvgCode;
+        }
+
+        // --- Event Handlers ---
+
+        // Update stroke width display and value
+        strokeWidthInput.addEventListener('input', (e) => {
+            strokeWidth = e.target.value;
+            strokeWidthValue.textContent = strokeWidth;
+        });
+
+        // Update stroke color value
+        strokeColorInput.addEventListener('input', (e) => {
+            strokeColor = e.target.value;
+        });
+
+        // Start drawing (mousedown or touchstart)
+        function startDrawing(event) {
+            // Prevent default actions (like text selection or page scroll on touch)
+            event.preventDefault();
+            isDrawing = true;
+            const { x, y } = getCoordinates(event);
+
+            // Create a new path element
+            currentPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            currentPathData = `M ${x} ${y}`; // Move to starting point
+            currentPath.setAttribute('d', currentPathData);
+            currentPath.setAttribute('stroke', strokeColor);
+            currentPath.setAttribute('stroke-width', strokeWidth);
+            currentPath.setAttribute('fill', 'none'); // Don't fill the shape
+            currentPath.setAttribute('stroke-linecap', 'round'); // Smoother line ends
+            currentPath.setAttribute('stroke-linejoin', 'round'); // Smoother line joins
+            canvas.appendChild(currentPath);
+        }
+
+        // Draw (mousemove or touchmove)
+        function draw(event) {
+            if (!isDrawing) return;
+            // Prevent default actions (like page scroll on touch)
+            event.preventDefault();
+            const { x, y } = getCoordinates(event);
+            currentPathData += ` L ${x} ${y}`; // Line to new point
+            currentPath.setAttribute('d', currentPathData);
+        }
+
+        // Stop drawing (mouseup, mouseleave, touchend, touchcancel)
+        function stopDrawing(event) {
+            if (!isDrawing) return;
+             // Prevent default actions if it's a touch event ending
+            if (event.type.startsWith('touch')) {
+                 event.preventDefault();
+            }
+            isDrawing = false;
+            currentPath = null; // Reset current path
+            currentPathData = ''; // Reset path data
+            updateCodeDisplay(); // Update code display when path is finished
+        }
+
+        // Clear canvas
+        clearButton.addEventListener('click', () => {
+            canvas.innerHTML = ''; // Remove all child elements (paths)
+            updateCodeDisplay();
+        });
+
+        // Undo last path
+        undoButton.addEventListener('click', () => {
+            const lastPath = canvas.lastElementChild;
+            if (lastPath) {
+                canvas.removeChild(lastPath);
+                updateCodeDisplay();
+            }
+        });
+
+        // --- Attach Event Listeners ---
+
+        // Mouse events
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseleave', stopDrawing); // Stop if mouse leaves canvas
+
+        // Touch events
+        canvas.addEventListener('touchstart', startDrawing);
+        canvas.addEventListener('touchmove', draw);
+        canvas.addEventListener('touchend', stopDrawing);
+        canvas.addEventListener('touchcancel', stopDrawing); // Stop if touch is interrupted
+
+        // Initial code display update
+        updateCodeDisplay();
+
+    </script>
+
+</body>
+</html>

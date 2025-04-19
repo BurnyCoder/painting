@@ -1,6 +1,6 @@
 # painting
 HTML, Tailwind CSS, JS
 
-![image](https://github.com/user-attachments/assets/057e8ce1-2ced-491a-9303-07cdd16da6e5)
+![image](https://github.com/user-attachments/assets/ed24d366-79d2-4648-802b-6dddff3d3498)
 
 Open paint.html
